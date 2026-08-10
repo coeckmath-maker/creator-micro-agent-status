@@ -6,14 +6,11 @@ payload on stdin. This must **never** make a hook fail: every error is
 swallowed and the script always exits 0. A status light is not worth breaking
 someone's session over.
 
-One subtlety worth knowing: the Stop hook fires at the end of every turn,
-whether the assistant delivered a result or asked you a question — nothing in
-the payload tells them apart. So we look at `last_assistant_message`: if it
-ends on a question, the session gets amber (it wants something from you)
-rather than green (there is merely something to read).
-
-That is a heuristic, not a certainty. A closing rhetorical question turns
-amber wrongly; a real request phrased without a question mark stays green.
+One subtlety: the Stop hook fires at the end of every turn, whether the
+assistant delivered a result or asked you a question, and nothing in the
+payload tells them apart. So we read `last_assistant_message` and check
+whether it *ends* on a question — if so the session gets amber (it wants
+something from you) instead of green (there is merely something to read).
 """
 import json
 import os
@@ -42,6 +39,7 @@ def load_state():
 
 
 def save_state(state):
+    """Write atomically, so a reader never sees a half-written file."""
     os.makedirs(STATE_DIR, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=STATE_DIR)
     try:
@@ -72,20 +70,31 @@ def as_text(msg):
 
 
 def ends_with_question(text):
-    """Does the closing paragraph contain a question aimed at the human?
+    """Does the message *end* on a question aimed at the human?
 
-    Code blocks are stripped first — a '?' inside code is not a question — and
-    only the tail of the message is considered, where a question would land.
+    Only the LAST PARAGRAPH counts. An earlier version looked at the last 3
+    lines, which reached back into bullet lists: in markdown a paragraph
+    occupies a single line, so "3 lines" covers a wildly variable amount of
+    text depending on formatting. The verdict tracked the message's layout
+    rather than its intent.
+
+    The rule is deliberately strict and predictable: the question has to come
+    last. That is also how you should write when you actually want an answer.
+
+    Trailing lists and tables don't count - enumerating open questions is not
+    the same as asking for a decision.
     """
     if not text:
         return False
     text = re.sub(r"```.*?```", " ", text, flags=re.S)   # fenced code
     text = re.sub(r"`[^`]*`", " ", text)                  # inline code
-    lines = [l.strip() for l in text.strip().splitlines() if l.strip()]
-    if not lines:
+    paragraphs = [p.strip() for p in re.split(r"\n\s*\n", text.strip()) if p.strip()]
+    if not paragraphs:
         return False
-    tail = " ".join(lines[-3:])          # last few non-empty lines
-    return "?" in tail
+    last = paragraphs[-1]
+    if re.match(r"^\s*([-*+]|\d+[.)]|\|)", last):        # list or table
+        return False
+    return "?" in last
 
 
 def main():
