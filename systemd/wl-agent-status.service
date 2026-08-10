@@ -1,0 +1,14 @@
+[Unit]
+Description=Push Claude Code session status to a Work Louder Creator Micro 2
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 %h/.local/share/wl-agent-status/agent_status_daemon.py
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:%h/.local/share/wl-agent-status/daemon.log
+StandardError=append:%h/.local/share/wl-agent-status/daemon.log
+
+[Install]
+WantedBy=default.target
