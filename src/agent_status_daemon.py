@@ -28,6 +28,12 @@ STALE_AFTER_S = 3 * 3600   # a session untouched for 3h is treated as gone
 POLL_S = 1.0
 RETRY_DEVICE_S = 10.0
 
+# The firmware eventually forgets the colours if you stop talking to it: after
+# six quiet hours the keys were dark while v.oai.thstatus still answered
+# {"ok":1}, and a single fresh call brought them straight back. So resend the
+# current state on a timer, whether or not anything changed.
+HEARTBEAT_S = 30.0
+
 # Worst state wins the slot, so a project needing attention is never masked
 # by another of its sessions quietly finishing.
 PRIORITY = ["error", "awaiting-approval", "working", "unread", "idle"]
@@ -99,6 +105,7 @@ def assign_slots(by_cwd, slots):
 def main():
     log("wl-agent-status daemon starting")
     last_states, dev, last_attempt = None, None, 0.0
+    last_push = 0.0
 
     while True:
         state = load_json(STATE_FILE, {"sessions": {}})
@@ -106,8 +113,9 @@ def main():
         states, slots = assign_slots(project_states(state), slots)
         save_json(SLOTS_FILE, slots)
 
-        if states != last_states:
-            now = time.time()
+        now = time.time()
+        changed = states != last_states
+        if changed or now - last_push >= HEARTBEAT_S:
             if dev is None and now - last_attempt >= RETRY_DEVICE_S:
                 last_attempt = now
                 try:
@@ -118,8 +126,10 @@ def main():
             if dev is not None:
                 try:
                     dev.set_agent_states(states)
-                    log(f"leds -> {states}")
+                    if changed:      # keep the heartbeat out of the log
+                        log(f"leds -> {states}")
                     last_states = states
+                    last_push = now
                 except Exception as e:
                     log(f"send failed ({e}); device probably disconnected")
                     try:

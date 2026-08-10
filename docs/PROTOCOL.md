@@ -85,6 +85,14 @@ with no ChatGPT app installed. That is the core finding this project is built on
 `id` = slot 0-5, `c` = colour packed as `0xRRGGBB`, `b` = brightness,
 `e` = effect (`1` solid, `0` off), `s` = speed.
 
+**The colours are not persistent — resend them.** Left alone for hours the
+device drops back to its normal lighting, and it gives you no hint that it has:
+`v.oai.thstatus` keeps answering `{"ok":1}` on dark keys, `device.status` looks
+healthy, and the keymap on flash is untouched. One fresh call lights everything
+back up. So a daemon that only writes on state *changes* will appear to break
+after a quiet stretch. Ours resends every 30 s (`HEARTBEAT_S`), which also
+covers the device sleeping or dropping its Bluetooth link and coming back.
+
 ## Two consequences of using `KV_OAI_` keycodes
 
 Both are structural. You accept them or you go without live status.
