@@ -41,8 +41,11 @@ Without it, `fs.writebin` reports fewer `bytes_written` than were sent.
 | `host.focused_app` | app info | host tells device what's in focus |
 | `ui.home_accent_color` | colour | |
 
-`layer_index` in `device.status` is the layer's **`id` field**, not its position
-in the array.
+`layer_index` in `device.status` looks like the layer's **`id` field** rather
+than its position in the array — but don't read the active layer from it. It
+never moved across every observation here: `3` while the Claude layer (id 1)
+was in use, and `3` again on the Codex layer (id 3), on different days and
+firmware versions. Treat it as unreliable.
 
 ### Not implemented on v0.6.1
 
