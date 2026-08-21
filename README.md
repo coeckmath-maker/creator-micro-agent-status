@@ -11,13 +11,19 @@ directly over raw HID — **the vendor app doesn't even need to be running.**
 ## Why this exists
 
 Work Louder's 0.6 firmware brought "agent supervision" to the Creator Micro,
-but it's wired to the ChatGPT desktop app, which has no Linux build. The vendor
-app tells you so and greys the layer out.
+but it's wired to the ChatGPT desktop app — and it's for *its* agent, not
+yours. The vendor app greys the layer out on Linux and tells you the feature
+isn't available here.
 
 It turns out the LEDs aren't gated on any of that. A key becomes a status slot
 purely because its keycode is `KV_OAI_AG00`…`AG05`, and `v.oai.thstatus` drives
 those slots over plain JSON-RPC. Any layer can have them, any program can drive
 them. Everything else here follows from that.
+
+The ChatGPT app has since shipped a Linux build, and it drives the very same
+six slots. That's fine — this daemon only ever writes the slots it owns, and
+fills them from the opposite end, so the two run side by side. See
+`docs/PROTOCOL.md` for why per-layer status is impossible.
 
 ## What you get
 

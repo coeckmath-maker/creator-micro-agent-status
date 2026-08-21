@@ -74,7 +74,8 @@ Both exist, and they disagree. Watch out.
 A key lights up as a status slot only if its keycode is `KV_OAI_AG00` …
 `KV_OAI_AG05`. These are ordinary entries in `keymap.json`, so **any layer can
 have them** — the feature is not tied to the vendor's "Codex" layer, and works
-with no ChatGPT app installed. That is the core finding this project is built on.
+with or without the ChatGPT app running. That is the core finding this project
+is built on.
 
 `v.oai.thstatus` takes an array, one entry per slot:
 
@@ -84,6 +85,19 @@ with no ChatGPT app installed. That is the core finding this project is built on
 
 `id` = slot 0-5, `c` = colour packed as `0xRRGGBB`, `b` = brightness,
 `e` = effect (`1` solid, `0` off), `s` = speed.
+
+**The six slots are global, and you may not be the only one writing them.**
+There is no per-layer status: slot 0 is the same physical LED whichever layer
+is showing, and nothing in the protocol tells you which layer is active —
+`device.status.layer_index` reads the same value regardless (3 here, on two
+layers, on different days), and the only notifications the device sends are
+`v.oai.hid` (key press) and `v.oai.rad` (joystick). So "this layer shows agent
+A, that one shows agent B" cannot be built.
+
+What you *can* do is share. The ChatGPT desktop app — which does exist on
+Linux, at `/opt/codex-desktop/ChatGPT` — drives these same slots. Send only the
+slots you own (see `set_agent_states`) and fill from the opposite end it uses,
+and both programs coexist: it takes 0, 1, 2… and you take 5, 4, 3…
 
 **The colours are not persistent — resend them.** Left alone for hours the
 device drops back to its normal lighting, and it gives you no hint that it has:

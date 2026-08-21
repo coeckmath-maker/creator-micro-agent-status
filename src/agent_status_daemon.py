@@ -96,9 +96,14 @@ def assign_slots(by_cwd, slots):
     for s in slots:
         s["last_active"] = now
 
-    states = ["off"] * NUM_SLOTS
+    # Fill from the TOP (slot 3, then 2, 1, 0). The ChatGPT desktop app drives
+    # the same six slots and fills them from the bottom, so starting at the
+    # opposite end lets both run at once without erasing each other.
+    states = {}
     for i, s in enumerate(slots[:NUM_SLOTS]):
-        states[i] = by_cwd.get(s["cwd"], "off")
+        st = by_cwd.get(s["cwd"])
+        if st:
+            states[NUM_SLOTS - 1 - i] = st
     return states, slots
 
 
@@ -106,6 +111,7 @@ def main():
     log("wl-agent-status daemon starting")
     last_states, dev, last_attempt = None, None, 0.0
     last_push = 0.0
+    owned = set()     # slots WE lit: the only ones we are allowed to turn off
 
     while True:
         state = load_json(STATE_FILE, {"sessions": {}})
@@ -125,9 +131,13 @@ def main():
                     dev = None
             if dev is not None:
                 try:
-                    dev.set_agent_states(states)
+                    payload = dict(states)
+                    for slot in owned - set(states):
+                        payload[slot] = "off"    # hand back the slots we drop
+                    dev.set_agent_states(payload)
+                    owned = set(states)
                     if changed:      # keep the heartbeat out of the log
-                        log(f"leds -> {states}")
+                        log(f"leds -> {dict(sorted(states.items()))}")
                     last_states = states
                     last_push = now
                 except Exception as e:

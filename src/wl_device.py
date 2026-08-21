@@ -145,13 +145,23 @@ class Device:
         raise TimeoutError(method)
 
     def set_agent_states(self, states, brightness=1):
-        """Colour the agent-status LEDs. `states` is a list of STATE_COLOR keys.
+        """Colour the agent-status LEDs, touching only the slots you name.
+
+        `states` is a dict of {slot: STATE_COLOR key}. Slots you leave out are
+        left exactly as they are, which is what lets this coexist with another
+        program driving the same six slots — the ChatGPT desktop app, say.
+        Sending "off" for the slots you don't use wipes its LEDs on every
+        refresh, so don't.
 
         Only keys mapped to a KV_OAI_AGxx keycode on the active layer light up;
         the firmware exposes six slots regardless.
+
+        A list is still accepted (slot 0, 1, 2…) for command-line use.
         """
+        if not isinstance(states, dict):
+            states = dict(enumerate(states))
         params = []
-        for slot, st in enumerate((list(states) + ["off"] * 6)[:6]):
+        for slot, st in sorted(states.items()):
             color = STATE_COLOR.get(st, 0)
             params.append({
                 "id": slot,
@@ -160,6 +170,8 @@ class Device:
                 "e": EFFECT_SOLID if color else EFFECT_OFF,
                 "s": 0,
             })
+        if not params:
+            return None
         return self.call("v.oai.thstatus", params)
 
     def close(self):
