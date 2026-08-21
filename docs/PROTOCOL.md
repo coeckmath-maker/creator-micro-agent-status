@@ -36,16 +36,17 @@ Without it, `fs.writebin` reports fewer `bytes_written` than were sent.
 | `fs.list` | `{checksum: true}` | name, size, SHA-1 per file |
 | `fs.readbin` | `{file, offset, len}` | `{data: base64, total_size}` |
 | `fs.writebin` | `{file, data, append, completed, offset}` | base64 chunks |
-| `v.oai.thstatus` | array of `{id, c, b, e, s}` | the agent-status LEDs |
+| `v.oai.thstatus` | array of `{id, color, brightness, effect, speed}` | the agent-status LEDs |
 | `lights.preview` | `{backlight, underglow}` | accepted, but see caveats |
 | `host.focused_app` | app info | host tells device what's in focus |
 | `ui.home_accent_color` | colour | |
 
-`layer_index` in `device.status` looks like the layer's **`id` field** rather
-than its position in the array — but don't read the active layer from it. It
-never moved across every observation here: `3` while the Claude layer (id 1)
-was in use, and `3` again on the Codex layer (id 3), on different days and
-firmware versions. Treat it as unreliable.
+`layer_index` in `device.status` **does move when you switch layers**, but
+what it counts is unclear: it read `2` on the Codex layer, which sits at array
+position 2 and carries id 3 (so: position), yet it also read `3` at a time when
+only three layers existed, positions 0-2 (so: not a position). Use a *change*
+in the value as a reliable "the user switched layers" signal; don't trust the
+value itself to name the layer.
 
 ### Not implemented on v0.6.1
 
@@ -83,19 +84,29 @@ is built on.
 `v.oai.thstatus` takes an array, one entry per slot:
 
 ```json
-[{"id": 0, "c": 3166206, "b": 1, "e": 1, "s": 0}]
+[{"id": 0, "color": 3166206, "brightness": 1, "effect": 1, "speed": 0}]
 ```
 
-`id` = slot 0-5, `c` = colour packed as `0xRRGGBB`, `b` = brightness,
-`e` = effect (`1` solid, `0` off), `s` = speed.
+`id` = slot 0-5 (required), `color` packed as `0xRRGGBB`, `brightness` 0-1,
+`effect` (0 off, 1 solid, 2 snake, 3 rainbow, 4 breath, 5 gradient,
+6 shallow-breath), `speed` 0-1. Two more optional fields exist:
+`syncKeysLighting` and `syncAmbientLighting` make the key backlight or the
+outer ring follow that slot's colour.
+
+**Spell the field names out in full.** Reverse-engineering notes (this one
+included, until 0.6.2 landed) use the short forms `c`, `b`, `e`, `s`. Firmware
+v0.6.1 accepted them; **0.6.2 ignores them silently** — it still answers
+`{"ok":1}` and leaves the keys dark, with nothing in the debug log. If your
+LEDs stop working after a firmware update, this is the first thing to check.
+The long names come from the vendor's own SDK (`@worklouder/device-kit-oai`,
+bundled in the ChatGPT desktop app) and work on both versions.
 
 **The six slots are global, and you may not be the only one writing them.**
-There is no per-layer status: slot 0 is the same physical LED whichever layer
-is showing, and nothing in the protocol tells you which layer is active —
-`device.status.layer_index` reads the same value regardless (3 here, on two
-layers, on different days), and the only notifications the device sends are
-`v.oai.hid` (key press) and `v.oai.rad` (joystick). So "this layer shows agent
-A, that one shows agent B" cannot be built.
+Slot 0 is the same physical LED whichever layer is showing — the firmware has
+no notion of per-layer status. The device never announces a layer change
+either; its only notifications are `v.oai.hid` (key press) and `v.oai.rad`
+(joystick). You can still detect a switch by polling `device.status` and
+watching `layer_index` change, at the cost of a poll on a battery device.
 
 What you *can* do is share. The ChatGPT desktop app — which does exist on
 Linux, at `/opt/codex-desktop/ChatGPT` — drives these same slots. Send only the

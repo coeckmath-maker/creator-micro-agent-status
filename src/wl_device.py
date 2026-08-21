@@ -156,6 +156,12 @@ class Device:
         Only keys mapped to a KV_OAI_AGxx keycode on the active layer light up;
         the firmware exposes six slots regardless.
 
+        Field names are spelled out in full (`color`, `brightness`, `effect`,
+        `speed`) as the vendor SDK does. The short forms `c`/`b`/`e`/`s` that
+        circulate in reverse-engineering notes worked on firmware v0.6.1 but
+        are silently ignored by 0.6.2: it still answers {"ok":1} and leaves
+        the keys dark. Verified on hardware.
+
         A list is still accepted (slot 0, 1, 2…) for command-line use.
         """
         if not isinstance(states, dict):
@@ -165,10 +171,10 @@ class Device:
             color = STATE_COLOR.get(st, 0)
             params.append({
                 "id": slot,
-                "c": color,
-                "b": brightness,
-                "e": EFFECT_SOLID if color else EFFECT_OFF,
-                "s": 0,
+                "color": color,
+                "brightness": brightness,
+                "effect": EFFECT_SOLID if color else EFFECT_OFF,
+                "speed": 0,
             })
         if not params:
             return None
