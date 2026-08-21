@@ -117,6 +117,14 @@ A key references either a plain keycode (`KC_A`), a macro (`KA_A<id>`), a smart
 action (`SA_<n>`), or an internal function (`KI_CS_SHOW_TMP` = hold to show the
 cheat sheet).
 
+**Keep your own copy of `keymap.json`.** A firmware update can wipe a layer:
+going from `v0.6.1` to `0.6.2` left the vendor's Codex layer in place by id and
+name but emptied every key to `KC_NONE` and renamed it "Layer", while the two
+user layers survived untouched. Nothing warns you, and the vendor app will not
+put it back — it refuses to edit any layer holding `KV_OAI_` keycodes. Pull the
+file with `--read` after every firmware bump, and keep a factory-state copy:
+restoring is then a matter of pasting the old layer object back in.
+
 ```jsonc
 {
   "id": 1, "name": "My layer", "color": 16753920,
