@@ -31,6 +31,8 @@ fills them from the opposite end, so the two run side by side. See
   by Claude Code hooks — no polling of anything, no wrapper around the CLI
 - **A background daemon** that only talks to the device when something changes,
   survives unplugging, and reconnects on its own
+- **The ring lit with whatever is most urgent**, so a session waiting on you is
+  visible from across the room without reading four keys (`--no-ring` to skip)
 - **A safe config writer** that reads every write back and compares it byte for
   byte, because this firmware truncates oversized writes without saying so
 - **A protocol write-up** ([`docs/PROTOCOL.md`](docs/PROTOCOL.md)) covering the
@@ -105,6 +107,27 @@ Hooks reload without restarting your session, so you can wire this up mid-flight
 | `idle` | white | session started, nothing pending |
 | `error` | red | set it yourself |
 
+### The ring
+
+The band around the case takes the most urgent state on the board, dimmed to
+0.35 — a wide diffuse surface at full brightness dominates a desk instead of
+informing it. `idle` deliberately leaves it dark: a light that is always on
+tells you nothing, and this one sits on top of whatever ambient lighting you
+chose yourself.
+
+That last part is the catch. **The ring is a property of the device, not of a
+layer** — the firmware has nowhere to store a per-layer version — so driving it
+overrides your own setting on every layer, and it is still doing so while you
+are on some other one. If you would rather keep your lighting, run the daemon
+with `--no-ring`:
+
+```bash
+systemctl --user edit --full wl-agent-status.service   # add --no-ring to ExecStart
+```
+
+The daemon hands the ring back when it stops. It does not hand the keys back:
+another program may own the slots it never touched.
+
 ## Configuring the layer
 
 The device's own flash is the source of truth — the vendor app reads it on
@@ -139,6 +162,8 @@ in the protocol notes. Configure that layer from scripts instead.
 ```bash
 python3 src/listen.py 60      # dump everything the device emits for 60s
 python3 src/wl_device.py working awaiting-approval unread idle   # force colours
+python3 src/wl_device.py --ring awaiting-approval                # force the ring
+python3 -m unittest discover -s test                             # no hardware needed
 journalctl --user -u wl-agent-status -f
 ```
 
@@ -171,6 +196,16 @@ drive this hardware:
 
 - [mpociot/codex-micro-stream-deck-emulator](https://github.com/mpociot/codex-micro-stream-deck-emulator)
 - [maxxspotter/codex-micro-app](https://github.com/maxxspotter/codex-micro-app)
+
+Two more appeared in September 2026, from macOS:
+[00cyre/creator-micro-kit](https://github.com/00cyre/creator-micro-kit) (a Node
+library for this RPC service) and
+[00cyre/claude-code-keypad](https://github.com/00cyre/claude-code-keypad) (the
+same idea as this project, reading Claude Code's transcripts instead of its
+hooks). They go through a Swift IOKit bridge, so neither runs here — but they
+found the same central fact independently, and `v.oai.rgbcfg` is documented
+there first. What that method wants on the wire, though, is not what they say:
+see [`docs/PROTOCOL.md`](docs/PROTOCOL.md).
 
 Not affiliated with Work Louder or OpenAI. Hardware is theirs; the mistakes
 here are mine.

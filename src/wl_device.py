@@ -45,6 +45,21 @@ STATE_COLOR = {
 }
 EFFECT_SOLID, EFFECT_OFF = 1, 0
 
+# A dark, inert lighting zone. Handy as a starting point, and as the thing to
+# leave behind when you stop driving the ring.
+ZONE_OFF = {"color": 0x000000, "brightness": 0, "effect": EFFECT_OFF, "speed": 0}
+
+
+def zone_for(state, brightness=1):
+    """A lighting zone showing one of the STATE_COLOR states."""
+    color = STATE_COLOR.get(state, 0)
+    return {
+        "color": color,
+        "brightness": brightness if color else 0,
+        "effect": EFFECT_SOLID if color else EFFECT_OFF,
+        "speed": 0,
+    }
+
 
 class DeviceNotFound(RuntimeError):
     pass
@@ -180,14 +195,56 @@ class Device:
             return None
         return self.call("v.oai.thstatus", params)
 
+    def set_zones(self, ambient=None, keys=None):
+        """Drive the lighting zones: the ring around the case (`ambient`), and
+        the backlight of the keys (`keys`). Pass None to leave one untouched —
+        the firmware accepts a payload carrying only one of the two.
+
+        Each zone is a dict of `color`, `brightness`, `effect` and `speed`,
+        same as a status slot, plus an optional `magic` (leave it at 1).
+
+        **The field names go on the wire abbreviated** — `c`, `b`, `e`, `s`,
+        `m` — which is the exact opposite of `v.oai.thstatus` on the very same
+        firmware. The two vendor methods disagree, and neither tells you: both
+        answer {"ok":1} whatever you send them. Measured on 0.6.2: a ring told
+        to go red with the short names went red; the identical call with the
+        long names left it dark.
+
+        Only the ring was ever seen to change. The `keys` zone returns the same
+        {"ok":1} with no visible effect on a layer carrying KV_OAI_AG keycodes
+        — which is the only kind of layer this project runs on, and where the
+        firmware is already painting the keys from the status slots.
+        """
+        params = {}
+        for name, zone in (("ambient", ambient), ("keys", keys)):
+            if zone is None:
+                continue
+            params[name] = {
+                "e": zone.get("effect", EFFECT_SOLID),
+                "b": zone.get("brightness", 1),
+                "s": zone.get("speed", 0),
+                "m": zone.get("magic", 1),
+                "c": zone.get("color", 0),
+            }
+        if not params:
+            return None
+        return self.call("v.oai.rgbcfg", params)
+
     def close(self):
         os.close(self.fd)
 
 
 if __name__ == "__main__":
-    states = sys.argv[1:] or ["idle"] * 6
+    args = sys.argv[1:]
     d = Device()
     print("firmware:", d.call("sys.version"))
     print("status  :", d.call("device.status"))
-    print("leds    :", d.set_agent_states(states), "->", states)
+    if args and args[0] == "--ring":
+        # `wl_device.py --ring working` — the ring is global, so this is also
+        # the quickest way to see whether it obeys you at all on your firmware.
+        state = args[1] if len(args) > 1 else "off"
+        print("ring    :", d.set_zones(ambient=zone_for(state)), "->", state)
+    else:
+        states = args or ["idle"] * 6
+        print("leds    :", d.set_agent_states(states), "->", states)
     d.close()

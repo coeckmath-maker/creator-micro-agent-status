@@ -1,9 +1,10 @@
 # Creator Micro 2 — reverse-engineered protocol notes
 
 Everything here was established against a real device (firmware **v0.6.1**,
-VID `0x303A`, PID `0x8298`) by reading its traffic, its config files, and the
-Linux build of the vendor app. Where a claim was only inferred and not proven,
-it says so.
+then **v0.6.2**, VID `0x303A`, PID `0x8298`) by reading its traffic, its config
+files, and the Linux build of the vendor app. Where a claim was only inferred
+and not proven, it says so — and this firmware makes that distinction matter
+more than most, because it answers `{"ok":1}` to a great deal it then ignores.
 
 ## Transport
 
@@ -37,6 +38,7 @@ Without it, `fs.writebin` reports fewer `bytes_written` than were sent.
 | `fs.readbin` | `{file, offset, len}` | `{data: base64, total_size}` |
 | `fs.writebin` | `{file, data, append, completed, offset}` | base64 chunks |
 | `v.oai.thstatus` | array of `{id, color, brightness, effect, speed}` | the agent-status LEDs |
+| `v.oai.rgbcfg` | `{ambient, keys}`, each `{c, b, e, s, m}` | the lighting zones — note the *short* field names |
 | `lights.preview` | `{backlight, underglow}` | accepted, but see caveats |
 | `host.focused_app` | app info | host tells device what's in focus |
 | `ui.home_accent_color` | colour | |
@@ -120,6 +122,62 @@ healthy, and the keymap on flash is untouched. One fresh call lights everything
 back up. So a daemon that only writes on state *changes* will appear to break
 after a quiet stretch. Ours resends every 30 s (`HEARTBEAT_S`), which also
 covers the device sleeping or dropping its Bluetooth link and coming back.
+
+## The ring, and a trap between two vendor methods
+
+`v.oai.rgbcfg` drives the lighting *zones* rather than individual keys, and
+unlike the status slots it works on any layer:
+
+```json
+{"ambient": {"c": 16739584, "b": 0.35, "e": 1, "s": 0, "m": 1},
+ "keys":    {"c": 0, "b": 0, "e": 0, "s": 0, "m": 1}}
+```
+
+`ambient` is the band around the case. `keys` is the backlight of the keys no
+status slot has claimed; on a layer carrying `KV_OAI_AG` keycodes — the only
+kind this project runs on — it was never observed to do anything, which fits
+the per-layer lighting being ignored there anyway. Either key may be left out
+of the payload.
+
+**And here is the trap: this method wants its field names ABBREVIATED**
+(`c`, `b`, `e`, `s`, `m`) — the exact opposite of `v.oai.thstatus` on the very
+same firmware, which wants them spelled out. Given the long names, `rgbcfg`
+answers `{"ok":1}` and leaves the ring dark.
+
+Measured on 0.6.2, alternating red-with-short-names and green-with-long-names
+every five seconds: only red ever appeared. Two vendor methods, two
+conventions, no error either way. There is no rule to infer here — check each
+method against the hardware, and pin what you find with a test, because both
+spellings look equally correct to a reader six months later.
+
+Like the status slots, the ring is a property of the **device**: there is no
+layer field to put it in, so it stays as you left it while you work on some
+other layer. Whether it is forgotten after a long silence the way the slots are
+has not been established; this daemon resends it on the same 30-second
+heartbeat and does not find out.
+
+### `{"ok":1}` means "I received something"
+
+Not "I understood it". `v.oai.rgbcfg` answers `{"ok":1}` to an empty object,
+and to a JSON array where it expects an object. `v.oai.thstatus` answers it for
+`id` values of 6, 19 and 20 — well past the six slots the firmware is said to
+have. None of that is evidence of anything.
+
+The one thing the firmware does refuse is an unknown *method*:
+
+```json
+{"code": 404, "message": "Method not found"}
+```
+
+So a 404 tells you a method does not exist, and its absence tells you the
+method does. Past that, the LEDs are the only test that means anything — which
+is worth remembering before concluding a device is broken.
+
+The [`creator-micro-kit`](https://github.com/00cyre/creator-micro-kit) project,
+which documented `rgbcfg` first, lists twenty keycodes `KV_OAI_AG00`…`AG19`.
+Whether this firmware paints past the sixth is untested here: finding out means
+rewriting `keymap.json`, the one operation on this device that can cost you an
+afternoon with a screwdriver.
 
 ## Two consequences of using `KV_OAI_` keycodes
 
