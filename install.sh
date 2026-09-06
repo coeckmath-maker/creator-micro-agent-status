@@ -25,7 +25,10 @@ echo "==> installing the systemd --user unit"
 sed "s|%h|$HOME|g" "$(dirname "$SRC")/systemd/wl-agent-status.service" \
     > "$UNIT_DIR/wl-agent-status.service"
 systemctl --user daemon-reload
-systemctl --user enable --now wl-agent-status.service
+systemctl --user enable wl-agent-status.service
+# restart, not `enable --now`: on a re-run the service is already active and
+# --now leaves it that way, still running the code you just replaced.
+systemctl --user restart wl-agent-status.service
 systemctl --user is-active wl-agent-status.service
 
 cat <<EOF
