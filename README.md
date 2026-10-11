@@ -43,7 +43,7 @@ drive the lights.
 
 ## Requirements
 
-- A **Creator Micro 2**, firmware **v0.6.1** or later (VID `303A`, PID `8298`)
+- A **Creator Micro 2**, firmware **v0.6.1** or later (VID `303A`, PID `8298` — or `8297`, which the same keypad can also report)
 - Linux with `hidraw`, Python 3.9+, no extra packages
 - Read/write access to the device node — see [udev](#udev-permissions)
 
@@ -73,6 +73,7 @@ attributes:
 ```
 # /etc/udev/rules.d/99-worklouder.rules
 KERNEL=="hidraw*", ATTRS{idVendor}=="303a", ATTRS{idProduct}=="8298", MODE="0660", TAG+="uaccess"
+KERNEL=="hidraw*", ATTRS{idVendor}=="303a", ATTRS{idProduct}=="8297", MODE="0660", TAG+="uaccess"
 KERNEL=="hidraw*", KERNELS=="0005:303A:*", MODE="0660", TAG+="uaccess"
 ```
 
@@ -206,6 +207,30 @@ hooks). They go through a Swift IOKit bridge, so neither runs here — but they
 found the same central fact independently, and `v.oai.rgbcfg` is documented
 there first. What that method wants on the wire, though, is not what they say:
 see [`docs/PROTOCOL.md`](docs/PROTOCOL.md).
+
+### Borrowed from 00cyre/claude-code-keypad
+
+Four ideas in this project come from
+[00cyre/claude-code-keypad](https://github.com/00cyre/claude-code-keypad)
+(MIT, commit `b92bb2b`), reimplemented here in Python for Linux. Each is marked
+at the spot in the code where it lives:
+
+- **A dead session stops looking busy.** Claude Code writes
+  `~/.claude/sessions/<pid>.json` for each running session; the hooks record
+  that pid, and the daemon turns a `working` or `awaiting-approval` session
+  whose process has exited into `idle`. Before this, a session killed mid-turn
+  (Ctrl+C, a crash) stayed blue for up to three hours, because no `Stop` hook
+  fires in that case. We additionally check the process start time, so a
+  recycled pid cannot keep a dead session lit.
+  (`record_state.py`, `agent_status_daemon.py`)
+- **Both product ids.** The Creator Micro 2 can enumerate as `0x8297` as well
+  as `0x8298`. (`wl_device.py`)
+- **A backup before every keymap write**, in
+  `~/.local/share/wl-agent-status/backups/`, with the path printed.
+  (`write_config.py`)
+- **One writer at a time.** `write_config.py` refuses to write while the Input
+  app is running, and stops the status daemon for the duration of the write.
+  (`write_config.py`)
 
 Not affiliated with Work Louder or OpenAI. Hardware is theirs; the mistakes
 here are mine.

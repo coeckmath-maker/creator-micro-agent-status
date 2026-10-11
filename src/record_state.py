@@ -22,6 +22,13 @@ import time
 STATE_DIR = os.path.expanduser("~/.local/share/wl-agent-status")
 STATE_FILE = os.path.join(STATE_DIR, "state.json")
 
+# Claude Code keeps one <pid>.json per running session here, naming its
+# sessionId. Recording the pid lets the daemon notice a session that died
+# mid-turn — Ctrl+C, a crash, a closed window — after which no Stop hook ever
+# fires and the key would otherwise stay "working" for hours.
+# Idea borrowed from 00cyre/claude-code-keypad (src/sessions.js, MIT).
+SESSIONS_DIR = os.path.expanduser("~/.claude/sessions")
+
 EVENT_STATE = {
     "SessionStart": "idle",
     "UserPromptSubmit": "working",
@@ -51,6 +58,30 @@ def save_state(state):
             os.unlink(tmp)
         except OSError:
             pass
+
+
+def find_process(session_id):
+    """(pid, procStart) of the process running `session_id`, or (None, None).
+
+    procStart is the process start time as /proc/<pid>/stat reports it, which
+    is what makes the pid safe to check later: a recycled pid has a different
+    start time.
+    """
+    try:
+        entries = os.listdir(SESSIONS_DIR)
+    except OSError:
+        return None, None
+    for entry in entries:
+        if not entry.endswith(".json"):
+            continue
+        try:
+            with open(os.path.join(SESSIONS_DIR, entry)) as f:
+                record = json.load(f)
+        except Exception:
+            continue
+        if record.get("sessionId") == session_id and record.get("pid"):
+            return record["pid"], record.get("procStart")
+    return None, None
 
 
 def as_text(msg):
@@ -115,12 +146,13 @@ def main():
         session_id = payload.get("session_id") or "unknown"
         cwd = payload.get("cwd") or os.environ.get("PWD") or "unknown"
 
+        entry = {"cwd": cwd, "state": new_state, "ts": time.time()}
+        pid, proc_start = find_process(session_id)
+        if pid:
+            entry["pid"], entry["proc_start"] = pid, proc_start
+
         state = load_state()
-        state.setdefault("sessions", {})[session_id] = {
-            "cwd": cwd,
-            "state": new_state,
-            "ts": time.time(),
-        }
+        state.setdefault("sessions", {})[session_id] = entry
         save_state(state)
     except Exception:
         # Never fail a Claude Code hook because of us.

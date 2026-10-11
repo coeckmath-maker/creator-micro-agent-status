@@ -74,7 +74,40 @@ def save_json(path, data):
     os.replace(tmp, path)
 
 
-def project_states(state):
+def process_gone(pid, proc_start):
+    """True only when we can tell the session's process has exited.
+
+    The start time is compared, not just the pid: Linux recycles pids, and a
+    stranger that inherited one must not keep a dead session lit. Anything we
+    cannot read counts as "still there" — wrongly dimming a live session is
+    worse than a stale light.
+    """
+    if not pid:
+        return False
+    try:
+        with open(f"/proc/{pid}/stat") as f:
+            stat = f.read()
+    except FileNotFoundError:
+        return True
+    except OSError:
+        return False
+    if proc_start is None:
+        return False
+    # comm, field 2, is in parentheses and may contain spaces: split after it.
+    # starttime is field 22, so index 19 counting from field 3.
+    fields = stat.rpartition(")")[2].split()
+    return len(fields) > 19 and fields[19] != str(proc_start)
+
+
+# A session whose process is gone cannot be working, nor waiting on a
+# permission prompt — no hook will ever say so, because Stop does not fire on
+# Ctrl+C or a crash. Those states fall back to idle. "unread" stays: the
+# answer is still there to read.
+# From 00cyre/claude-code-keypad (stateFromRecords in src/sessions.js, MIT).
+NEEDS_A_PROCESS = {"working", "awaiting-approval"}
+
+
+def project_states(state, gone=process_gone):
     """Collapse sessions to one state per working directory, ignoring stale ones."""
     now = time.time()
     by_cwd = {}
@@ -83,6 +116,8 @@ def project_states(state):
             continue
         cwd = sess.get("cwd", "unknown")
         st = sess.get("state", "idle")
+        if st in NEEDS_A_PROCESS and gone(sess.get("pid"), sess.get("proc_start")):
+            st = "idle"
         cur = by_cwd.get(cwd)
         if cur is None or PRIORITY.index(st) < PRIORITY.index(cur):
             by_cwd[cwd] = st

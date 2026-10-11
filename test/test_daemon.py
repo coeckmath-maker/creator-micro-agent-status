@@ -38,6 +38,46 @@ class ProjectStates(unittest.TestCase):
         self.assertEqual(daemon.project_states(state), {})
 
 
+class DeadSessions(unittest.TestCase):
+    """A session whose process is gone falls back to idle — except "unread".
+    Approach borrowed from 00cyre/claude-code-keypad."""
+
+    def with_pid(self, st):
+        state = sessions(("a", "/p", st, 0))
+        state["sessions"]["a"].update(pid=123, proc_start="456")
+        return state
+
+    def test_dead_working_session_goes_idle(self):
+        got = daemon.project_states(self.with_pid("working"), gone=lambda *_: True)
+        self.assertEqual(got, {"/p": "idle"})
+
+    def test_dead_approval_prompt_goes_idle(self):
+        got = daemon.project_states(self.with_pid("awaiting-approval"), gone=lambda *_: True)
+        self.assertEqual(got, {"/p": "idle"})
+
+    def test_unread_survives_its_process(self):
+        got = daemon.project_states(self.with_pid("unread"), gone=lambda *_: True)
+        self.assertEqual(got, {"/p": "unread"})
+
+    def test_live_session_is_untouched(self):
+        got = daemon.project_states(self.with_pid("working"), gone=lambda *_: False)
+        self.assertEqual(got, {"/p": "working"})
+
+    def test_own_process_is_alive(self):
+        with open(f"/proc/{os.getpid()}/stat") as f:
+            start = f.read().rpartition(")")[2].split()[19]
+        self.assertFalse(daemon.process_gone(os.getpid(), start))
+
+    def test_recycled_pid_counts_as_gone(self):
+        self.assertTrue(daemon.process_gone(os.getpid(), "1"))
+
+    def test_missing_pid_counts_as_gone(self):
+        self.assertTrue(daemon.process_gone(2 ** 22 + 1, "1"))   # above pid_max
+
+    def test_no_pid_recorded_is_never_gone(self):
+        self.assertFalse(daemon.process_gone(None, None))
+
+
 class SlotAssignment(unittest.TestCase):
     def test_fills_from_the_top(self):
         # The ChatGPT app fills from slot 0 up; we come down from the top so

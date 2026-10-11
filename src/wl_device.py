@@ -30,6 +30,13 @@ import sys
 import time
 
 VID, PID = 0x303A, 0x8298
+# The same keypad enumerates under either product id depending on how the
+# firmware comes up, so both have to be tried before concluding it is absent.
+# Still a filter, not "any Work Louder device": a Codex Micro (0x8360) on the
+# same machine must never be painted with our colours.
+# Borrowed from 00cyre/claude-code-keypad (src/keypad.js, MIT); only 0x8298
+# has been seen on this project's hardware.
+PIDS = (0x8298, 0x8297)
 REPORT_ID, CH_DEBUG, CH_RPC = 0x06, 1, 2
 MAX_PAYLOAD = 61
 
@@ -75,7 +82,7 @@ def find_device():
             uevent = open(f"{node}/device/uevent").read().upper()
         except OSError:
             continue
-        if f"{VID:04X}" in uevent and f"{PID:04X}" in uevent:
+        if f"{VID:04X}" in uevent and any(f"{pid:04X}" in uevent for pid in PIDS):
             return f"/dev/{os.path.basename(node)}"
     raise DeviceNotFound("Creator Micro 2 not found (unplugged, or Bluetooth down?)")
 
