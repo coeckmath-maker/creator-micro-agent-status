@@ -98,7 +98,12 @@ Hooks write a one-line state per session: the four basic ones
 the light honest — `PostToolUse` / `PostToolUseFailure` clear amber once an
 approved tool has run, `PreToolUse` on `AskUserQuestion` turns amber,
 `StopFailure` turns red, and `SessionEnd` frees the slot at once. A compaction
-(`SessionStart` with `source: compact`) leaves the state as it was. The daemon groups sessions by working directory,
+(`SessionStart` with `source: compact`) leaves the state as it was.
+
+Answering **No** to a permission prompt fires none of these: it interrupts the
+turn, and `Stop` does not run after an interruption (`PermissionDenied` only
+covers auto-mode denials). The key therefore stays amber until your next
+prompt — which is accurate, since Claude is waiting for your instructions. The daemon groups sessions by working directory,
 keeps the worst state per project, assigns each project a stable LED slot, and
 pushes a frame only when something actually changed.
 
