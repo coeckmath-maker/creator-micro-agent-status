@@ -11,7 +11,23 @@ assistant delivered a result or asked you a question, and nothing in the
 payload tells them apart. So we read `last_assistant_message` and check
 whether it *ends* on a question — if so the session gets amber (it wants
 something from you) instead of green (there is merely something to read).
+
+Beyond the four basic events, a few more keep the light honest. The
+transitions are an idea from n4ru/cm2-claude's state table (no licence
+published, so nothing was copied — reimplemented here from its README):
+
+  * PostToolUse / PostToolUseFailure clear amber back to blue. Without them a
+    session stayed amber after you approved its tool, for the rest of the
+    turn, because nothing else fires until Stop.
+  * PreToolUse on AskUserQuestion turns amber: the session is waiting on you,
+    even though it is technically mid-turn.
+  * SessionStart after a compaction keeps the state it had, instead of
+    flashing a working session back to white.
+  * StopFailure (an API error ended the turn) is red — the first thing ever to
+    trigger the `error` state.
+  * SessionEnd frees the slot at once instead of three hours later.
 """
+import fcntl
 import json
 import os
 import re
@@ -29,12 +45,45 @@ STATE_FILE = os.path.join(STATE_DIR, "state.json")
 # Idea borrowed from 00cyre/claude-code-keypad (src/sessions.js, MIT).
 SESSIONS_DIR = os.path.expanduser("~/.claude/sessions")
 
+LOCK_FILE = os.path.join(STATE_DIR, "state.lock")
+
 EVENT_STATE = {
     "SessionStart": "idle",
     "UserPromptSubmit": "working",
     "Stop": "unread",
     "Notification": "awaiting-approval",
+    "PreToolUse": "awaiting-approval",   # wired to AskUserQuestion only
+    "StopFailure": "error",
 }
+
+# Events that mean "the tool ran, so whatever we were waiting for is over".
+# They fire after every tool call, so they only ever clear amber: anything
+# else is left alone and nothing is written.
+TOOL_DONE = {"PostToolUse", "PostToolUseFailure"}
+
+KEEP, DROP = object(), object()
+
+
+def decide(event, payload, current):
+    """What this hook means for a session: a new state, KEEP or DROP.
+
+    `current` is the session's present state, or None if it has none yet.
+    Pure, so the whole table can be tested without touching a file.
+    """
+    if event == "SessionEnd":
+        return DROP
+    if event in TOOL_DONE:
+        return "working" if current == "awaiting-approval" else KEEP
+    if event == "SessionStart" and payload.get("source") == "compact" and current:
+        return KEEP
+    if event == "PreToolUse" and payload.get("tool_name") != "AskUserQuestion":
+        return KEEP        # belt and braces: settings.json already filters on it
+    new_state = EVENT_STATE.get(event)
+    if new_state is None:
+        return KEEP
+    if event == "Stop" and ends_with_question(as_text(payload.get("last_assistant_message"))):
+        return "awaiting-approval"
+    return new_state
 
 
 def load_state():
@@ -136,24 +185,33 @@ def main():
         except Exception:
             payload = {}
 
-        new_state = EVENT_STATE.get(event)
-        if new_state is None:
-            return
-
-        if event == "Stop" and ends_with_question(as_text(payload.get("last_assistant_message"))):
-            new_state = "awaiting-approval"
-
         session_id = payload.get("session_id") or "unknown"
         cwd = payload.get("cwd") or os.environ.get("PWD") or "unknown"
 
-        entry = {"cwd": cwd, "state": new_state, "ts": time.time()}
-        pid, proc_start = find_process(session_id)
-        if pid:
-            entry["pid"], entry["proc_start"] = pid, proc_start
+        os.makedirs(STATE_DIR, exist_ok=True)
+        # Several sessions' hooks can fire at the same instant, and each one
+        # reads, changes and rewrites the whole file. Without a lock the last
+        # writer silently erases what the others just recorded.
+        with open(LOCK_FILE, "w") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            state = load_state()
+            sessions = state.setdefault("sessions", {})
+            current = (sessions.get(session_id) or {}).get("state")
 
-        state = load_state()
-        state.setdefault("sessions", {})[session_id] = entry
-        save_state(state)
+            verdict = decide(event, payload, current)
+            if verdict is KEEP:
+                return
+            if verdict is DROP:
+                if sessions.pop(session_id, None) is not None:
+                    save_state(state)
+                return
+
+            entry = {"cwd": cwd, "state": verdict, "ts": time.time()}
+            pid, proc_start = find_process(session_id)
+            if pid:
+                entry["pid"], entry["proc_start"] = pid, proc_start
+            sessions[session_id] = entry
+            save_state(state)
     except Exception:
         # Never fail a Claude Code hook because of us.
         pass

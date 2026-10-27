@@ -14,6 +14,7 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
 
 import agent_status_daemon as daemon   # noqa: E402
+import record_state as hook             # noqa: E402
 from wl_device import Device, zone_for  # noqa: E402
 
 
@@ -76,6 +77,53 @@ class DeadSessions(unittest.TestCase):
 
     def test_no_pid_recorded_is_never_gone(self):
         self.assertFalse(daemon.process_gone(None, None))
+
+
+class HookTransitions(unittest.TestCase):
+    """What each Claude Code hook does to a session's state. The extra events
+    follow n4ru/cm2-claude's state table (reimplemented, nothing copied)."""
+
+    def test_tool_done_clears_amber(self):
+        for ev in ("PostToolUse", "PostToolUseFailure"):
+            self.assertEqual(hook.decide(ev, {}, "awaiting-approval"), "working")
+
+    def test_tool_done_leaves_everything_else_alone(self):
+        for st in ("working", "unread", "idle", "error", None):
+            self.assertIs(hook.decide("PostToolUse", {}, st), hook.KEEP)
+
+    def test_ask_user_question_is_amber(self):
+        got = hook.decide("PreToolUse", {"tool_name": "AskUserQuestion"}, "working")
+        self.assertEqual(got, "awaiting-approval")
+
+    def test_other_tools_before_running_change_nothing(self):
+        self.assertIs(hook.decide("PreToolUse", {"tool_name": "Bash"}, "working"), hook.KEEP)
+
+    def test_compaction_keeps_the_state(self):
+        got = hook.decide("SessionStart", {"source": "compact"}, "working")
+        self.assertIs(got, hook.KEEP)
+
+    def test_compaction_of_an_unknown_session_still_registers_it(self):
+        self.assertEqual(hook.decide("SessionStart", {"source": "compact"}, None), "idle")
+
+    def test_fresh_start_is_idle(self):
+        self.assertEqual(hook.decide("SessionStart", {"source": "startup"}, "unread"), "idle")
+
+    def test_api_failure_is_red(self):
+        self.assertEqual(hook.decide("StopFailure", {}, "working"), "error")
+
+    def test_session_end_frees_the_slot(self):
+        self.assertIs(hook.decide("SessionEnd", {}, "unread"), hook.DROP)
+
+    def test_stop_on_a_question_is_amber(self):
+        got = hook.decide("Stop", {"last_assistant_message": "Je pousse ?"}, "working")
+        self.assertEqual(got, "awaiting-approval")
+
+    def test_stop_otherwise_is_green(self):
+        got = hook.decide("Stop", {"last_assistant_message": "Fini."}, "working")
+        self.assertEqual(got, "unread")
+
+    def test_unknown_event_changes_nothing(self):
+        self.assertIs(hook.decide("FileChanged", {}, "working"), hook.KEEP)
 
 
 class SlotAssignment(unittest.TestCase):

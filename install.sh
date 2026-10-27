@@ -42,7 +42,12 @@ already there — do not overwrite the file):
   "SessionStart":     [{"hooks": [{"type": "command", "command": "python3 $DEST/record_state.py SessionStart",     "timeout": 3}]}],
   "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "python3 $DEST/record_state.py UserPromptSubmit", "timeout": 3}]}],
   "Stop":             [{"hooks": [{"type": "command", "command": "python3 $DEST/record_state.py Stop",             "timeout": 3}]}],
-  "Notification":     [{"matcher": "permission_prompt", "hooks": [{"type": "command", "command": "python3 $DEST/record_state.py Notification", "timeout": 3}]}]
+  "Notification":     [{"matcher": "permission_prompt", "hooks": [{"type": "command", "command": "python3 $DEST/record_state.py Notification", "timeout": 3}]}],
+  "PreToolUse":       [{"matcher": "AskUserQuestion", "hooks": [{"type": "command", "command": "python3 $DEST/record_state.py PreToolUse", "timeout": 3}]}],
+  "PostToolUse":        [{"hooks": [{"type": "command", "command": "python3 $DEST/record_state.py PostToolUse",        "timeout": 3}]}],
+  "PostToolUseFailure": [{"hooks": [{"type": "command", "command": "python3 $DEST/record_state.py PostToolUseFailure", "timeout": 3}]}],
+  "StopFailure":        [{"hooks": [{"type": "command", "command": "python3 $DEST/record_state.py StopFailure",        "timeout": 3}]}],
+  "SessionEnd":         [{"hooks": [{"type": "command", "command": "python3 $DEST/record_state.py SessionEnd",         "timeout": 3}]}]
 }
 
 Hooks take effect immediately — no need to restart your session.

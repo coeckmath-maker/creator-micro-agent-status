@@ -93,8 +93,12 @@ Claude Code hooks ──► record_state.py ──► state.json
                                     Creator Micro 2 LEDs
 ```
 
-Four hooks (`SessionStart`, `UserPromptSubmit`, `Stop`, `Notification`) write a
-one-line state per session. The daemon groups sessions by working directory,
+Hooks write a one-line state per session: the four basic ones
+(`SessionStart`, `UserPromptSubmit`, `Stop`, `Notification`), plus five that keep
+the light honest — `PostToolUse` / `PostToolUseFailure` clear amber once an
+approved tool has run, `PreToolUse` on `AskUserQuestion` turns amber,
+`StopFailure` turns red, and `SessionEnd` frees the slot at once. A compaction
+(`SessionStart` with `source: compact`) leaves the state as it was. The daemon groups sessions by working directory,
 keeps the worst state per project, assigns each project a stable LED slot, and
 pushes a frame only when something actually changed.
 
@@ -106,7 +110,7 @@ Hooks reload without restarting your session, so you can wire this up mid-flight
 | `awaiting-approval` | amber | a permission prompt is up |
 | `unread` | green | the turn finished |
 | `idle` | white | session started, nothing pending |
-| `error` | red | set it yourself |
+| `error` | red | an API error ended the turn (`StopFailure`) |
 
 ### The ring
 
@@ -231,6 +235,13 @@ at the spot in the code where it lives:
 - **One writer at a time.** `write_config.py` refuses to write while the Input
   app is running, and stops the status daemon for the duration of the write.
   (`write_config.py`)
+
+### Inspired by n4ru/cm2-claude
+
+The five extra hook transitions above follow the state table in
+[n4ru/cm2-claude](https://github.com/n4ru/cm2-claude) (Windows). That
+repository publishes no licence, so no code was taken from it: the transitions
+were reimplemented here from its README. (`record_state.py`)
 
 Not affiliated with Work Louder or OpenAI. Hardware is theirs; the mistakes
 here are mine.
